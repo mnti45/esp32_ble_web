@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>ESP32 BLE Control</title>
+<style>
+  body { font-family: Arial; text-align:center; margin-top:40px; }
+  button { padding:14px 22px; margin:8px; font-size:18px; }
+  #status { margin-top:20px; font-weight:600; color:#333; }
+</style>
+</head>
+<body>
+  <h2>ESP32 BLE Control</h2>
+  <button id="btnConnect">Connect</button>
+  <div>
+    <button onclick="send('LEFT')">⬅ LEFT</button>
+    <button onclick="send('RIGHT')">➡ RIGHT</button>
+    <button onclick="send('STRAIGHT')">⬆ STRAIGHT</button>
+    <button onclick="send('STOP')">🛑 STOP</button>
+  </div>
+  <div id="status">Status: not connected</div>
+
+<script>
+const SERVICE_UUID = '6e400001-b5a3-f393-e0a9-e50e24dcca9e';
+const CHAR_UUID    = '6e400002-b5a3-f393-e0a9-e50e24dcca9e';
+
+let bleDevice = null;
+let bleCharacteristic = null;
+
+function updateStatus(s) {
+  document.getElementById('status').innerText = 'Status: ' + s;
+}
+
+async function connectBLE() {
+  try {
+    updateStatus('requesting device...');
+    // Thử tìm theo name trước, nếu không thì fallback acceptAllDevices
+    try {
+      bleDevice = await navigator.bluetooth.requestDevice({
+        filters: [{ name: 'ESP32_BLE' }],
+        optionalServices: [SERVICE_UUID]
+      });
+    } catch (err) {
+      // fallback nếu filter không trả về thiết bị
+      bleDevice = await navigator.bluetooth.requestDevice({
+        acceptAllDevices: true,
+        optionalServices: [SERVICE_UUID]
+      });
+    }
+
+    updateStatus('connecting GATT...');
+    const server = await bleDevice.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    bleCharacteristic = await service.getCharacteristic(CHAR_UUID);
+    updateStatus('connected to ' + (bleDevice.name || 'unknown'));
+    bleDevice.addEventListener('gattserverdisconnected', () => updateStatus('disconnected'));
+  } catch (e) {
+    console.error(e);
+    updateStatus('error: ' + (e.message || e));
+  }
+}
+
+async function send(cmd) {
+  try {
+    if (!bleCharacteristic) {
+      await connectBLE();
+      if (!bleCharacteristic) return;
+    }
+    const enc = new TextEncoder();
+    await bleCharacteristic.writeValue(enc.encode(cmd));
+    updateStatus('sent: ' + cmd);
+  } catch (e) {
+    console.error(e);
+    updateStatus('send error: ' + (e.message || e));
+  }
+}
+
+document.getElementById('btnConnect').addEventListener('click', connectBLE);
+</script>
+</body>
+</html>
